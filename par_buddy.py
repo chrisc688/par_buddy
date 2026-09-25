@@ -10,8 +10,11 @@ import csv
 import random
 import argparse
 import sys
+import warnings
 from pathlib import Path
 from typing import List, Dict, Tuple
+
+__version__ = "1.1.0"
 
 
 class Player:
@@ -156,8 +159,8 @@ class GroupGenerator:
                 groups_of_4 = total_players // 4
                 groups_of_3 = 0
             elif remainder == 1:
-                groups_of_4 = (total_players // 4) - 1
-                groups_of_3 = 2
+                groups_of_4 = (total_players // 4) - 2
+                groups_of_3 = 3
             elif remainder == 2:
                 groups_of_4 = (total_players // 4) - 1
                 groups_of_3 = 2
@@ -221,51 +224,126 @@ class GroupGenerator:
             raise ValueError(f"Too many rank 1 players. Have {len(rank_1_players)} rank 1 players "
                            f"but can only accommodate {rank_1_index} (max 2 per group in {total_groups} groups).")
         
-        # Phase 3: Fill remaining slots with rank 2, rank 3, and rank 4 players
-        # Separate by gender for better distribution
-        rank_2_male = [p for p in rank_2_players if p.gender.lower() == 'male']
-        rank_2_female = [p for p in rank_2_players if p.gender.lower() == 'female']
-        rank_3_male = [p for p in rank_3_players if p.gender.lower() == 'male']
-        rank_3_female = [p for p in rank_3_players if p.gender.lower() == 'female']
-        rank_4_male = [p for p in rank_4_players if p.gender.lower() == 'male']
-        rank_4_female = [p for p in rank_4_players if p.gender.lower() == 'female']
-        
-        # Create combined lists prioritizing female distribution
-        all_remaining_players = []
-        
-        # Add players in a way that promotes gender balance
-        max_len = max(len(rank_2_male), len(rank_2_female), len(rank_3_male), 
-                     len(rank_3_female), len(rank_4_male), len(rank_4_female))
-        
-        for i in range(max_len):
-            # Add one from each category if available, prioritizing females for balance
-            if i < len(rank_2_female):
-                all_remaining_players.append(rank_2_female[i])
-            if i < len(rank_2_male):
-                all_remaining_players.append(rank_2_male[i])
-            if i < len(rank_3_female):
-                all_remaining_players.append(rank_3_female[i])
-            if i < len(rank_3_male):
-                all_remaining_players.append(rank_3_male[i])
-            if i < len(rank_4_female):
-                all_remaining_players.append(rank_4_female[i])
-            if i < len(rank_4_male):
-                all_remaining_players.append(rank_4_male[i])
-        
-        # Shuffle the combined list to add randomness while maintaining gender balance
+        # Phase 3: Fill female players without creating a group with exactly one.
+        assigned_players = [player for group in self.groups for player in group]
+        remaining_players = [
+            player for player in self.active_players
+            if player not in assigned_players
+        ]
+        remaining_females = [
+            player for player in remaining_players
+            if player.gender.lower() == 'female'
+        ]
+        remaining_non_females = [
+            player for player in remaining_players
+            if player.gender.lower() != 'female'
+        ]
+        random.shuffle(remaining_females)
+        random.shuffle(remaining_non_females)
+
+        # First pair female captains that were placed in separate groups.
+        for index, group in enumerate(self.groups):
+            female_count = sum(player.gender.lower() == 'female' for player in group)
+            if female_count == 1:
+                if not remaining_females or len(group) >= group_sizes[index]:
+                    warnings.warn(
+                        "Unable to keep all female players paired; allowing an "
+                        "edge-case group with a single female player",
+                        UserWarning
+                    )
+                    continue
+                group.append(remaining_females.pop())
+
+        # Add females to existing female groups one at a time. Only introduce
+        # females to an all-male group in pairs (or a larger valid group).
+        while remaining_females:
+            group_options = [
+                (index, group) for index, group in enumerate(self.groups)
+                if not any(player.gender.lower() == 'female' for player in group)
+                and len(group) < group_sizes[index]
+            ]
+
+            # When the remaining count is odd, reserve a pair in an empty
+            # group so the final female can join an existing female group.
+            if len(remaining_females) % 2 == 1 and len(remaining_females) >= 3:
+                pair_option = next(
+                    (
+                        (index, group) for index, group in group_options
+                        if len(group) + 2 <= group_sizes[index]
+                    ),
+                    None
+                )
+                if pair_option is not None:
+                    index, group = pair_option
+                    group.extend(remaining_females.pop() for _ in range(2))
+                    continue
+
+            eligible_group = next(
+                (
+                    group for index, group in enumerate(self.groups)
+                    if sum(player.gender.lower() == 'female' for player in group) >= 2
+                    and len(group) < group_sizes[index]
+                ),
+                None
+            )
+            if eligible_group is not None:
+                eligible_group.append(remaining_females.pop())
+                continue
+
+            if not group_options:
+                warnings.warn(
+                    "Unable to keep all female players paired; allowing an "
+                    "edge-case group with a single female player",
+                    UserWarning
+                )
+                remaining_non_females.extend(remaining_females)
+                remaining_females.clear()
+                break
+
+            if len(remaining_females) >= 3 and any(
+                len(group) + 3 <= group_sizes[index]
+                for index, group in group_options
+            ):
+                index, group = next(
+                    (index, group) for index, group in group_options
+                    if len(group) + 3 <= group_sizes[index]
+                )
+                group.extend(remaining_females.pop() for _ in range(3))
+            elif len(remaining_females) >= 2:
+                index, group = next(
+                    (
+                        (index, group) for index, group in group_options
+                        if len(group) + 2 <= group_sizes[index]
+                    ),
+                    (None, None)
+                )
+                if group is None:
+                    warnings.warn(
+                        "Unable to keep all female players paired; allowing an "
+                        "edge-case group with a single female player",
+                        UserWarning
+                    )
+                    remaining_non_females.extend(remaining_females)
+                    remaining_females.clear()
+                    break
+                group.extend(remaining_females.pop() for _ in range(2))
+            else:
+                warnings.warn(
+                    "Unable to keep the final female player paired; allowing "
+                    "an edge-case group with a single female player",
+                    UserWarning
+                )
+                remaining_non_females.extend(remaining_females)
+                remaining_females.clear()
+
+        # Fill all remaining slots with the other players.
+        all_remaining_players = remaining_non_females
         random.shuffle(all_remaining_players)
-        
-        # Distribute players to groups
-        player_index = 0
-        for i, target_size in enumerate(group_sizes):
-            current_size = len(self.groups[i])
-            remaining_slots = target_size - current_size
-            
-            # Fill remaining slots
-            while remaining_slots > 0 and player_index < len(all_remaining_players):
-                self.groups[i].append(all_remaining_players[player_index])
-                player_index += 1
-                remaining_slots -= 1
+        for index, target_size in enumerate(group_sizes):
+            while len(self.groups[index]) < target_size:
+                if not all_remaining_players:
+                    raise ValueError("Unable to fill all group slots")
+                self.groups[index].append(all_remaining_players.pop())
         
         # Verify all players have been assigned
         total_assigned = sum(len(group) for group in self.groups)
@@ -277,6 +355,14 @@ class GroupGenerator:
             rank_1_count = sum(1 for p in group if p.ranking == 1)
             if rank_1_count > 2:
                 raise ValueError(f"Group {i+1} has {rank_1_count} rank 1 players, maximum allowed is 2")
+
+            female_count = sum(1 for p in group if p.gender.lower() == 'female')
+            if female_count == 1:
+                warnings.warn(
+                    f"Group {i+1} has exactly one female player; this is an "
+                    "unavoidable edge case",
+                    UserWarning
+                )
     
     def get_statistics(self) -> Dict:
         """Get summary statistics about players and groups."""
@@ -315,7 +401,7 @@ class HTMLGenerator:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Par Buddy - Random Group Assignments</title>
+    <title>Par Buddy v{__version__} - Random Group Assignments</title>
     <style>
         body {{
             font-family: Arial, sans-serif;
@@ -424,7 +510,7 @@ class HTMLGenerator:
 </head>
 <body>
     <div class="header">
-        <h1>🏌️ Par Buddy - Random Group Assignments</h1>
+        <h1>🏌️ Par Buddy - Random Group Assignments <small>v{__version__}</small></h1>
         <p>Generated on {self._get_timestamp()}</p>
     </div>
     

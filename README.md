@@ -1,5 +1,7 @@
 # Par Buddy - Random Group Generator
 
+Current version: **1.1.0**
+
 Par Buddy is a Python application that creates randomized groups from a list of players with rankings and playing status. Perfect for organizing golf groups, sports teams, or any activity requiring balanced random grouping.
 
 Available in both **GUI** and **command-line** versions for maximum flexibility.
@@ -94,6 +96,14 @@ python3 par_buddy.py your_players.csv -o my_groups.html
 ```bash
 python3 par_buddy.py your_players.csv --seed 42
 ```
+
+### Run the Test Suite
+```bash
+python3 -m unittest discover -s tests -p "test_*.py"
+```
+
+The test suite generates and validates rosters from 40 through 80 players,
+including inactive players and the warning-based female-grouping edge case.
 
 #### Help
 ```bash

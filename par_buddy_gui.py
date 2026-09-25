@@ -19,7 +19,7 @@ import subprocess
 import platform
 
 # Import the existing par_buddy classes
-from par_buddy import GroupGenerator, HTMLGenerator
+from par_buddy import GroupGenerator, HTMLGenerator, __version__
 
 
 class ParBuddyGUI:
@@ -27,7 +27,7 @@ class ParBuddyGUI:
     
     def __init__(self, root):
         self.root = root
-        self.root.title("Par Buddy - Random Group Generator")
+        self.root.title(f"Par Buddy v{__version__} - Random Group Generator")
         self.root.geometry("800x700")
         self.root.resizable(True, True)
         
@@ -120,7 +120,7 @@ class ParBuddyGUI:
         main_frame.columnconfigure(1, weight=1)
         
         # Title
-        title_label = ttk.Label(main_frame, text="🏌️ Par Buddy - Random Group Generator", 
+        title_label = ttk.Label(main_frame, text=f"🏌️ Par Buddy - Random Group Generator v{__version__}", 
                                font=('Arial', 16, 'bold'))
         title_label.grid(row=0, column=0, columnspan=3, pady=(0, 20))
         
